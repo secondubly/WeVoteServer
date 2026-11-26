@@ -7,10 +7,46 @@ Only [Docker Desktop](https://docs.docker.com/get-docker/) is required.
 
 ## Installation
 
-### 1. Clone your WeVoteServer fork (replace wevote with your github username)
-There is need to do this step if you already have been working with the WeVoteServer.
+### 0. We recommend following the WebApp (front end React) installation instructions first
+We recommend installing [WebApp with Docker](https://github.com/wevote/WebApp/blob/develop/docs/installing/DOCKER.md) first, since those instructions have more detail about the initial steps of setting up Docker.
+
+### 1. Fork, and then Clone WeVoteServer
+You do not need to do this step if you have already been working with the WeVoteServer.
+
+#### Fork from https://github.com/wevote/WebVoteServer.git to your Github account
+
+In a moment you will configure 'upstream' and 'origin'. WeVote uses the 'upstream' label for the link to the project's main repository (i.e. https://github.com/wevote/WeVoteServer).
+[This diagram](https://docs.google.com/drawings/d/1ED4X3Gpy_UruGDSiO8FjjxQeGOmQqIApguodHDo6-ok/edit) provides more context.
+
+On GitHub, login to your account (create one if you don't have one) (For example https://github.com/SailingSteve)
+
+Then navigate to the WebApp repository at https://github.com/wevote/WeVoteServer
+
+Press the "Fork" button on the upper right, select yourself on the "Owner" pull down
+
+Leave 'Copy the develop branch only' checkbox checked
+
+Press the "Create Fork" button.
+
+#### Clone the WeVoteServer code to your local machine
+
+##### From the command line
+
+Replacing 'YOUR-GITHUB-NAME' with your Github username:
+
   ```
-  git clone https://github.com/wevote/WeVoteServer.git
+  git clone https://github.com/YOUR-GITHUB-NAME/WeVoteServer.git
+  cd WeVoteServer
+  ```
+
+##### In your IDE
+1) In WebStorm or PyCharm, on the File menu | New | Project from Version Control
+2) Enter the URL (replacing 'YOUR-GITHUB-NAME' with your Github username) https://github.com/YOUR-GITHUB-NAME/WebApp.git
+3) Press the Clone button
+
+On the command line, change into the WeVoteServer directory:
+
+  ```
   cd WeVoteServer
   ```
 
@@ -18,7 +54,7 @@ There is need to do this step if you already have been working with the WeVoteSe
 In the root directory (in the same directory as the requirements.txt file), create a new .env file with these values:
 
 ```
-WE_VOTE_SERVER_PROTOCOL=https
+WE_VOTE_SERVER_PROTOCOL=http
 DATABASE_USER=postgres
 DATABASE_PASSWORD=admin
 DATABASE_NAME=wevoteserverdb
@@ -53,7 +89,30 @@ docker compose down
 
 Once the containers are running, you can now access the API at [http://localhost:8000/](http://localhost:8000/)
 
-### 5. Extra step to make changes to Docker startup files take effect
+
+#### 5. Troubleshooting: ports are not available: exposing port TCP 127.0.0.1:5432 -> 127.0.0.1:0: listen tcp4 127.0.0.1:5432: bind: address already in use
+
+After typing `docker compose up` you might get this error:
+
+```text
+Error response from daemon: ports are not available: exposing port TCP 127.0.0.1:5432 -> 127.0.0.1:0: listen tcp4 127.0.0.1:5432: bind: address already in use
+```
+
+This is because your local Postgres is still running, and needs to be shut down.
+
+Please also make sure that in this file: config/environment_variables.json
+the following three lines use the port 5432:
+
+```commandline
+"DATABASE_PORT":                  "5432",
+
+"DATABASE_PORT_READONLY":         "5432",
+
+"DATABASE_PORT_ANALYTICS":        "5432",
+```
+
+
+### 6. Extra step to make changes to Docker startup files take effect
 
 The `StatReloader` will automatically auto-reload changes into the Django `runsslserver` as you save them, except for these startup files:
 ```
@@ -73,7 +132,7 @@ docker compose build --no-cache
 docker compose up
 ```
 
-### 6. Remove containers and data (rarely needed)
+### 7. Remove containers and data (rarely needed)
 
 **Do not run these commands as part of the installation steps, but if you need them they are documented here.**
 
@@ -100,7 +159,7 @@ docker compose exec db sh
 
 ## PgAdmin
 ### 1. Access PgAdmin Container
-Go to `localhost:8080` in your local web browser to access the `PgAdmin` container UI.  If you used all the default environment_variables: on PgAdmin login screen, your "Email Address/Username" will be `fake_email@wevoteeducation.org` and your password will be `admin`.
+Go to `http://localhost:9000` in your local web browser to access the `PgAdmin` container UI.  If you used all the default environment_variables: on PgAdmin login screen, your "Email Address/Username" will be `fake_email@wevoteeducation.org` and your password will be `admin`.
 ### 2. Register New Server
 1. Right-click on 'Servers' in the left pane, and select Register/Server.
 
@@ -326,6 +385,31 @@ You should now be able to run and debug using PyCharm. If you already are a PyCh
 Press the green run icon to run, or the green bug icon to debug:
 
 <img src="./images/PycharmRunDebug.png" alt="PyCharm run or debug configuration" height="125" style="padding-left: 10%; box-shadow: 10px 5px 5px gray; border: 1px solid gray; clip-path: inset(0px 0px 0px 120px);">
+
+## Debugging the docker image with PyCharm
+
+Create another PyCharm run configuration called "Debug -- Attach to DAP" (in the "Attach to DAP" section) to run the **Python Debug Adapter Protocol (DAP)**
+
+<img src="./images/DebugAttachToDAP.png" alt="PyCharm run or debug configuration" width="1200" style="padding-left: 10%">
+
+- The *Remote address* field should be set to "localhost:5678"
+- The *Local Root Path* should be set to **your** path, something like "/Users/stevepodell/PycharmProjects/WeVoteServer"
+- The *remote Root Path* should be set to "."
+
+The press "OK" to save the run configuraion.
+
+Note:  It is possible to run two "run configurations" simultaneously in PyCharm, and we need to do that now, one to start Docker, 
+and the second to start the DAP.
+
+To debug your code, simply start the docker image running with your existing "WeVoterServer Run Docker" run configuration, then start a second 
+run for the "Debug -- Attach to DAP" (Click the green Bug icon to start it).   Then, when you execute your code, the debugger should stop at any
+breakpoints that you have set.
+
+<img src="./images/DebuggingWithDockerAndDAP.png" alt="PyCharm run or debug configuration" width="1300" style="padding-left: 10%">
+
+[//]: # (Explanation: debugpy is Microsoft's implementation of the Debug Adapter Protocol &#40;DAP&#41; for Python. It allows editors and )
+[//]: # (IDEs &#40;like Visual Studio Code and PyCharm&#41; to set breakpoints, step through code, inspect variables, and manage remote )
+[//]: # (or multi-threaded Python processes.)
 
 
 ## Running and Debugging the docker image with VS Code 

@@ -1524,6 +1524,7 @@ class AnalyticsManager(models.Manager):
                     google_civic_election_id=google_civic_election_id,
                     defaults=sitewide_election_metrics_values
                 )
+                success = True
             except Exception as e:
                 success = False
                 status += 'SITEWIDE_ELECTION_METRICS_UPDATE_OR_CREATE_FAILED ' + str(e) + ' '
@@ -1940,6 +1941,16 @@ class SitewideElectionMetrics(models.Model):
     google_civic_election_id = models.PositiveIntegerField(
         verbose_name="google civic election id", null=True, unique=False)
     election_day_text = models.CharField(verbose_name="election day", max_length=255, null=True, blank=True)
+    candidate_count = models.PositiveIntegerField(null=True)
+    candidate_count_claimed = models.PositiveIntegerField(null=True)
+    candidate_dislikes_count = models.PositiveIntegerField(null=True)
+    candidate_dislikes_count_claimed = models.PositiveIntegerField(null=True)
+    candidate_favorites_count = models.PositiveIntegerField(null=True)
+    candidate_favorites_count_claimed = models.PositiveIntegerField(null=True)
+    candidates_chosen_count = models.PositiveIntegerField(null=True)
+    candidates_chosen_count_claimed = models.PositiveIntegerField(null=True)
+    candidates_opposed_count = models.PositiveIntegerField(null=True)
+    candidates_opposed_count_claimed = models.PositiveIntegerField(null=True)
     visitors_total = models.PositiveIntegerField(verbose_name="", null=True, unique=False)
     authenticated_visitors_total = models.PositiveIntegerField(verbose_name="", null=True, unique=False)
     voter_guide_entries = models.PositiveIntegerField(verbose_name="", null=True, unique=False)

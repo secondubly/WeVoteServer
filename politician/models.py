@@ -93,6 +93,10 @@ POLITICIAN_UNIQUE_IDENTIFIERS = [
     'is_battleground_race_2024',
     'is_battleground_race_2025',
     'is_battleground_race_2026',
+    'is_battleground_race_2027',
+    'is_battleground_race_2028',
+    'is_battleground_race_2029',
+    'is_battleground_race_2030',
     'is_claimed_profile',
     'last_name',
     'linked_campaignx_we_vote_id',
@@ -330,9 +334,9 @@ class Politician(models.Model):
     twitter_user_id = models.BigIntegerField(verbose_name="twitter id", null=True, blank=True)
     vote_usa_politician_id = models.CharField(
         verbose_name="Vote USA permanent id for this politician", max_length=64, default=None, null=True, blank=True)
-    # Image URL on Vote USA's servers. See vote_usa_profile_image_url_https, the master image cached on We Vote servers.
+    # Image URL on Vote-USA's servers. See vote_usa_profile_image_url_https, the master image cached on We Vote servers.
     photo_url_from_vote_usa = models.TextField(null=True, blank=True)
-    # This is the master image url cached on We Vote servers. See photo_url_from_vote_usa for Vote USA URL.
+    # This is the master image url cached on We Vote servers. See photo_url_from_vote_usa for Vote-USA URL.
     vote_usa_profile_image_url_https = models.TextField(null=True, blank=True, default=None)
 
     # Which politician image is currently active?
@@ -359,7 +363,7 @@ class Politician(models.Model):
     we_vote_hosted_profile_uploaded_image_url_large = models.TextField(blank=True, null=True)
     we_vote_hosted_profile_uploaded_image_url_medium = models.TextField(blank=True, null=True)
     we_vote_hosted_profile_uploaded_image_url_tiny = models.TextField(blank=True, null=True)
-    # Image for politician from Vote USA, cached on We Vote's servers. See local master vote_usa_profile_image_url_https
+    # Image for politician from Vote-USA, cached on We Vote's servers. See local master vote_usa_profile_image_url_https
     we_vote_hosted_profile_vote_usa_image_url_large = models.TextField(blank=True, null=True)
     we_vote_hosted_profile_vote_usa_image_url_medium = models.TextField(blank=True, null=True)
     we_vote_hosted_profile_vote_usa_image_url_tiny = models.TextField(blank=True, null=True)
@@ -385,6 +389,10 @@ class Politician(models.Model):
     is_battleground_race_2024 = models.BooleanField(default=False, null=False)
     is_battleground_race_2025 = models.BooleanField(default=False, null=False)
     is_battleground_race_2026 = models.BooleanField(default=False, null=False)
+    is_battleground_race_2027 = models.BooleanField(default=False, null=False)
+    is_battleground_race_2028 = models.BooleanField(default=False, null=False)
+    is_battleground_race_2029 = models.BooleanField(default=False, null=False)
+    is_battleground_race_2030 = models.BooleanField(default=False, null=False)
     # Politician has claimed this profile - This is the master value, and is_claimed_profile in candidate table is copy
     is_claimed_profile = models.BooleanField(default=False, null=False)
     is_claimed_profile_analysis_complete = models.BooleanField(default=False)
@@ -1359,22 +1367,32 @@ class PoliticianManager(models.Manager):
             for facebook_url in facebook_url_list:
                 filter_set = True
                 if positive_value_exists(facebook_url):
-                    new_filter = (
-                        Q(facebook_url__iexact=facebook_url) |
-                        Q(facebook_url2__iexact=facebook_url) |
-                        Q(facebook_url3__iexact=facebook_url)
-                    )
-                    filters.append(new_filter)
+                    # Strip down to e.g. "facebook.com/RobynFrierHD40"
+                    stripped_facebook_url = facebook_url.strip().lower()
+                    stripped_facebook_url = re.sub(r'^https?://', '', stripped_facebook_url)
+                    stripped_facebook_url = re.sub(r'^(www\.|m\.)', '', stripped_facebook_url)
+                    stripped_facebook_url = stripped_facebook_url.rstrip('/')
+                    if positive_value_exists(stripped_facebook_url):
+                        # Matches "facebook.com/x", "www.facebook.com/x/", "https://www.facebook.com/x/", etc.
+                        facebook_url_regex = \
+                            r'^(https?://)?(www\.|m\.)?' + re.escape(stripped_facebook_url) + r'/?$'
+                        new_filter = (
+                            Q(facebook_url__iregex=facebook_url_regex) |
+                            Q(facebook_url2__iregex=facebook_url_regex) |
+                            Q(facebook_url3__iregex=facebook_url_regex)
+                        )
+                        filters.append(new_filter)
 
             if positive_value_exists(instagram_handle):
                 new_filter = Q(instagram_handle__iexact=instagram_handle)
                 filter_set = True
                 filters.append(new_filter)
 
-            if positive_value_exists(maplight_id):
-                new_filter = Q(maplight_id__iexact=maplight_id)
-                filter_set = True
-                filters.append(new_filter)
+            # No longer actively used
+            # if positive_value_exists(maplight_id):
+            #     new_filter = Q(maplight_id__iexact=maplight_id)
+            #     filter_set = True
+            #     filters.append(new_filter)
 
             for twitter_handle in twitter_handle_list:
                 if positive_value_exists(twitter_handle):
@@ -1403,10 +1421,11 @@ class PoliticianManager(models.Manager):
                         filters.append(final_search_filters)
                     # queryset = filter_results['queryset']
 
-            if positive_value_exists(vote_smart_id):
-                new_filter = Q(vote_smart_id__iexact=vote_smart_id)
-                filter_set = True
-                filters.append(new_filter)
+            # No longer actively used
+            # if positive_value_exists(vote_smart_id):
+            #     new_filter = Q(vote_smart_id__iexact=vote_smart_id)
+            #     filter_set = True
+            #     filters.append(new_filter)
 
             if positive_value_exists(vote_usa_politician_id):
                 new_filter = Q(vote_usa_politician_id__iexact=vote_usa_politician_id)

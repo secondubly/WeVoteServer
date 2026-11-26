@@ -2,13 +2,17 @@
 # Brought to you by We Vote. Be good.
 # -*- coding: UTF-8 -*-
 
+from datetime import datetime, timedelta
+import datetime as the_other_datetime
+import pytz
+
+from geopy.geocoders import get_geocoder_for_service
+
 from .models import BallotItemListManager, BallotItemManager, BallotReturnedListManager, BallotReturnedManager, \
     CANDIDATE, find_best_previously_stored_ballot_returned, OFFICE, MEASURE, \
     VoterBallotSaved, VoterBallotSavedManager
 from candidate.models import CandidateListManager
 from config.environment_variable_functions import get_environment_variable
-from datetime import datetime, timedelta
-import datetime as the_other_datetime
 from election.controllers import retrieve_upcoming_election_id_list
 from election.models import ElectionManager
 from exception.models import handle_exception
@@ -19,13 +23,12 @@ from measure.models import ContestMeasureListManager
 from office.models import ContestOffice, ContestOfficeManager, ContestOfficeListManager, OfficeExplanation
 from polling_location.models import PollingLocationManager
 from politician.models import Politician
-import pytz
+from voter.constants import MINIMUM_ADDRESS_LENGTH_TO_HAVE_STREET_ADDRESS
 from voter.models import BALLOT_ADDRESS, VoterAddressManager, VoterDeviceLinkManager, VoterManager
 import wevote_functions.admin
 from wevote_functions.functions import convert_to_int, positive_value_exists, \
     process_request_from_master, strip_html_tags
 from wevote_functions.functions_date import generate_localized_datetime_from_obj, DATE_FORMAT_YMD
-from geopy.geocoders import get_geocoder_for_service
 
 logger = wevote_functions.admin.get_logger(__name__)
 
@@ -964,6 +967,43 @@ def all_ballot_items_retrieve_for_api(google_civic_election_id, state_code=''): 
     return json_data
 
 
+def get_next_upcoming_election_date(upcoming_election_dates, timezone_name="America/Los_Angeles"):
+    """
+    Return the first 'YYYY-MM-DD' date text that is today or later. If all dates are past, return the last one.
+    Parallel to getNextUpcomingElectionDate in WebApp
+    """
+    _, datetime_now = generate_localized_datetime_from_obj(timezone_name)
+    today_text = datetime_now.strftime(DATE_FORMAT_YMD)
+    for election_date_text in sorted(upcoming_election_dates):
+        if election_date_text >= today_text:  # ISO date strings compare correctly as text
+            return election_date_text
+    return upcoming_election_dates[-1] if upcoming_election_dates else ''
+
+
+def next_national_election_yyyy_mm_dd_text(timezone_name="America/Los_Angeles"):
+    """
+    Parallel to nextNationalElectionYYYYMMDDText in WebApp.
+    :param timezone_name:
+    :return:
+    """
+    # We could of course calculate this date so it is evergreen
+    # (The rule is "the Tuesday after the first Monday of November")
+    # but there is value in having a date that is searchable in the code...
+    upcoming_election_dates = [
+        '2028-11-07',
+        '2030-11-05',
+        '2032-11-02',
+        '2034-11-07',
+        '2036-11-04',
+        '2038-11-02',
+        '2040-11-06',
+        '2042-11-04',
+        '2044-11-08',
+        '2046-11-06',
+    ]
+    return get_next_upcoming_election_date(upcoming_election_dates, timezone_name)
+
+
 def voter_ballot_items_retrieve_for_api(  # voterBallotItemsRetrieve
         voter_device_id='',
         google_civic_election_id=0,
@@ -972,7 +1012,33 @@ def voter_ballot_items_retrieve_for_api(  # voterBallotItemsRetrieve
         incoming_status=''):
     status = incoming_status
 
-    next_national_election_day_text = '2026-11-03'
+    error_json_data = {
+        'status':                               status,
+        'success':                              False,
+        'ballot_caveat':                        '',
+        'ballot_found':                         False,
+        'ballot_item_list':                     [],
+        'ballot_location_display_name':         '',
+        'ballot_location_shortcut':             ballot_location_shortcut,
+        'ballot_returned_we_vote_id':           ballot_returned_we_vote_id,
+        'google_civic_election_id':             google_civic_election_id,
+        'is_from_substituted_address':          False,
+        'is_from_test_ballot':                  False,
+        'next_national_election_day_text':      '',
+        'original_text_city':                   '',
+        'original_text_state':                  '',
+        'original_text_zip':                    '',
+        'polling_location_we_vote_id_source':   '',
+        'substituted_address_nearby':           '',
+        'substituted_address_city':             '',
+        'substituted_address_state':            '',
+        'substituted_address_zip':              '',
+        'text_for_map_search':                  '',
+        'voter_device_id':                      voter_device_id,
+        'voter_device_id_not_valid':            False,
+    }
+
+    next_national_election_day_text = next_national_election_yyyy_mm_dd_text()
 
     specific_ballot_requested = positive_value_exists(ballot_returned_we_vote_id) or \
         positive_value_exists(ballot_location_shortcut)
@@ -986,31 +1052,8 @@ def voter_ballot_items_retrieve_for_api(  # voterBallotItemsRetrieve
         # tell the WebApp the voter_device_id might need to be replaced.
         voter_device_id_not_valid = \
             positive_value_exists(voter_device_id) and positive_value_exists(voter_device_link_results['success'])
-        error_json_data = {
-            'status':                               status,
-            'success':                              False,
-            'ballot_caveat':                        '',
-            'ballot_found':                         False,
-            'ballot_item_list':                     [],
-            'ballot_location_display_name':         '',
-            'ballot_location_shortcut':             ballot_location_shortcut,
-            'ballot_returned_we_vote_id':           ballot_returned_we_vote_id,
-            'google_civic_election_id':             google_civic_election_id,
-            'is_from_substituted_address':          False,
-            'is_from_test_ballot':                  False,
-            'next_national_election_day_text':      '',
-            'original_text_city':                   '',
-            'original_text_state':                  '',
-            'original_text_zip':                    '',
-            'polling_location_we_vote_id_source':   '',
-            'substituted_address_nearby':           '',
-            'substituted_address_city':             '',
-            'substituted_address_state':            '',
-            'substituted_address_zip':              '',
-            'text_for_map_search':                  '',
-            'voter_device_id':                      voter_device_id,
-            'voter_device_id_not_valid':            voter_device_id_not_valid,
-        }
+        error_json_data['status'] = status
+        error_json_data['voter_device_id_not_valid'] = voter_device_id_not_valid
         return error_json_data
 
     voter_device_link = voter_device_link_results['voter_device_link']
@@ -1018,30 +1061,7 @@ def voter_ballot_items_retrieve_for_api(  # voterBallotItemsRetrieve
 
     if not positive_value_exists(voter_id):
         status += " " + "VALID_VOTER_ID_MISSING"
-        error_json_data = {
-            'status':                               status,
-            'success':                              False,
-            'ballot_caveat':                        '',
-            'ballot_found':                         False,
-            'ballot_item_list':                     [],
-            'ballot_location_display_name':         '',
-            'ballot_location_shortcut':             ballot_location_shortcut,
-            'ballot_returned_we_vote_id':           ballot_returned_we_vote_id,
-            'google_civic_election_id':             google_civic_election_id,
-            'is_from_substituted_address':          False,
-            'is_from_test_ballot':                  False,
-            'next_national_election_day_text':      '',
-            'original_text_city':                   '',
-            'original_text_state':                  '',
-            'original_text_zip':                    '',
-            'polling_location_we_vote_id_source':   '',
-            'substituted_address_nearby':           '',
-            'substituted_address_city':             '',
-            'substituted_address_state':            '',
-            'substituted_address_zip':              '',
-            'text_for_map_search':                  '',
-            'voter_device_id':                      voter_device_id,
-        }
+        error_json_data['voter_device_id'] = voter_device_id
         return error_json_data
 
     voter_address_manager = VoterAddressManager()
@@ -1114,30 +1134,18 @@ def voter_ballot_items_retrieve_for_api(  # voterBallotItemsRetrieve
         else:
             ballot_caveat = "Please save your address so we can find your ballot."
 
-        error_json_data = {
-            'status':                               status,
-            'success':                              True,
-            'ballot_caveat':                        ballot_caveat,
-            'ballot_found':                         False,
-            'ballot_item_list':                     [],
-            'ballot_location_display_name':         '',
-            'ballot_location_shortcut':             ballot_location_shortcut,
-            'ballot_returned_we_vote_id':           ballot_returned_we_vote_id,
-            'google_civic_election_id':             google_civic_election_id,
-            'is_from_substituted_address':          False,
-            'is_from_test_ballot':                  False,
-            'next_national_election_day_text':      next_national_election_day_text,
-            'original_text_city':                   '',
-            'original_text_state':                  '',
-            'original_text_zip':                    '',
-            'polling_location_we_vote_id_source':   polling_location_we_vote_id_source,
-            'substituted_address_nearby':           substituted_address_nearby,
-            'substituted_address_city':             substituted_address_city,
-            'substituted_address_state':            substituted_address_state,
-            'substituted_address_zip':              substituted_address_zip,
-            'text_for_map_search':                  text_for_map_search,
-            'voter_device_id':                      voter_device_id,
-        }
+        error_json_data['ballot_caveat'] = ballot_caveat
+        error_json_data['ballot_location_shortcut'] = ballot_location_shortcut
+        error_json_data['ballot_returned_we_vote_id'] = ballot_returned_we_vote_id
+        error_json_data['next_national_election_day_text'] = next_national_election_day_text
+        error_json_data['polling_location_we_vote_id_source'] = polling_location_we_vote_id_source
+        error_json_data['status'] = status
+        error_json_data['substituted_address_nearby'] = substituted_address_nearby
+        error_json_data['substituted_address_city'] = substituted_address_city
+        error_json_data['substituted_address_state'] = substituted_address_state
+        error_json_data['substituted_address_zip'] = substituted_address_zip
+        error_json_data['text_for_map_search'] = text_for_map_search
+        error_json_data['voter_device_id'] = voter_device_id
         return error_json_data
 
     google_civic_election_id = results['google_civic_election_id']
@@ -1306,9 +1314,9 @@ def voter_ballot_items_retrieve_for_api(  # voterBallotItemsRetrieve
                     election_description_text = election.election_name
                     election_day_text = election.election_day_text
 
-            # Brute force override for 2026 elections
-            election_description_text = "2026 General Election"
-            election_day_text = "2026-11-03"  # Displays as "Nov 3rd, 2026"
+            # Brute force override for upcoming elections
+            election_description_text = "General Election"
+            election_day_text = next_national_election_yyyy_mm_dd_text()  # Displays as "Nov 3rd, 2026"
             json_data = {
                 'status':                               status,
                 'success':                              True,
@@ -1416,7 +1424,7 @@ def choose_election_and_prepare_ballot_data(
 
     # If here, then we need to either:
     # 1) Find ballot data from a specific location (using either ballot_returned_we_vote_id or ballot_location_shortcut)
-    # 2) Get ballot data from the current default ballot source: Vote USA, Ballotpedia or Google Civic for VoterAddress
+    # 2) Get ballot data from the current default ballot source: Vote-USA, Ballotpedia or Google Civic for VoterAddress
     # 3) Find ballot data from a nearby address, previously retrieved and cached within We Vote, or
     #    generated within We Vote (google_civic_election_id >= 1000000
     # 4) Get test ballot data from Google Civic
@@ -1679,7 +1687,6 @@ def generate_ballot_data(
             pass
         elif default_election_data_source_is_ballotpedia:
             status += "SHOULD_WE_USE_BALLOTPEDIA_API? "
-            length_at_which_we_suspect_address_has_street = 25
             length_of_text_for_map_search = 0
             if isinstance(text_for_map_search, str):
                 length_of_text_for_map_search = len(text_for_map_search)
@@ -1701,7 +1708,7 @@ def generate_ballot_data(
 
             # We don't want to call Ballotpedia when we just have "City, State ZIP". Since we don't always know
             #  whether we have a street address or not, then we use a simple string length cut-off.
-            if length_of_text_for_map_search > length_at_which_we_suspect_address_has_street:
+            if length_of_text_for_map_search > MINIMUM_ADDRESS_LENGTH_TO_HAVE_STREET_ADDRESS:
                 status += "GENERATE_BALLOT_DATA_BP_TEXT_FOR_MAP_SEARCH_LONG_ENOUGH "
                 # 1a) Get ballot data from Ballotpedia for the actual VoterAddress
                 from import_export_ballotpedia.controllers import \
@@ -1753,14 +1760,13 @@ def generate_ballot_data(
                 status += "NOT_REACHING_OUT_TO_BALLOTPEDIA "
         elif default_election_data_source_is_ctcl:
             status += "SHOULD_WE_USE_CTCL_API? "
-            length_at_which_we_suspect_address_has_street = 25
             length_of_text_for_map_search = 0
             if isinstance(text_for_map_search, str):
                 length_of_text_for_map_search = len(text_for_map_search)
 
             # We don't want to call CTCL when we just have "City, State ZIP". Since we don't always know
             #  whether we have a street address or not, then we use a simple string length cut-off.
-            if length_of_text_for_map_search > length_at_which_we_suspect_address_has_street:
+            if length_of_text_for_map_search > MINIMUM_ADDRESS_LENGTH_TO_HAVE_STREET_ADDRESS:
                 status += "GENERATE_BALLOT_DATA_CTCL_TEXT_FOR_MAP_SEARCH_LONG_ENOUGH "
                 # 1a) Get ballot data for the actual VoterAddress
                 from import_export_google_civic.controllers import voter_ballot_items_retrieve_from_google_civic_2021
@@ -1856,15 +1862,14 @@ def generate_ballot_data(
                 return results
         elif default_election_data_source_is_vote_usa:
             status += "DEFAULT_ELECTION_SOURCE_IS_VOTE_USA "
-            length_at_which_we_suspect_address_has_street = 25
             length_of_text_for_map_search = 0
             if isinstance(text_for_map_search, str):
                 length_of_text_for_map_search = len(text_for_map_search)
 
-            # We don't want to call Vote USA when we just have "City, State ZIP".
+            # We don't want to call Vote-USA when we just have "City, State ZIP".
             # Since we don't always know whether we have a street address or not, then we use a
             # simple string length cut-off.
-            if length_of_text_for_map_search > length_at_which_we_suspect_address_has_street:
+            if length_of_text_for_map_search > MINIMUM_ADDRESS_LENGTH_TO_HAVE_STREET_ADDRESS:
                 status += "GENERATE_BALLOT_DATA_VOTE_USA_TEXT_FOR_MAP_SEARCH_LONG_ENOUGH "
                 # 1a) Get ballot data for the actual VoterAddress
                 from import_export_google_civic.controllers import voter_ballot_items_retrieve_from_google_civic_2021
@@ -2391,11 +2396,24 @@ def all_ballot_items_retrieve_for_one_election_for_api(google_civic_election_id,
     office_list = []
     results = {}
 
+    # Election Finder requests a multi-state election as "NA" because the election row has no
+    # state_code. That value otherwise matches only offices stored with no state. Return every
+    # office and measure on the election, and leave the caller's state_code in the API response.
+    state_code_for_query = state_code_to_find
+    if positive_value_exists(state_code_to_find) and state_code_to_find.lower() == 'na':
+        election_manager = ElectionManager()
+        election_results = election_manager.retrieve_election(google_civic_election_id)
+        if election_results['election_found']:
+            election_state_code = election_results['election'].state_code
+            if not positive_value_exists(election_state_code) or election_state_code.lower() == 'na':
+                state_code_for_query = ''
+                status += "NATIONAL_ELECTION_RETURNING_ALL_STATE_OFFICES "
+
     # Retrieve all offices in this election
     read_only = True
     return_list_of_objects = True
     office_results = contest_office_list_manager.retrieve_all_offices_for_upcoming_election(
-        google_civic_election_id, state_code_to_find, return_list_of_objects, read_only)
+        google_civic_election_id, state_code_for_query, return_list_of_objects, read_only)
     office_success = office_results['success']
     status += office_results['status']
     if office_results['office_list_found']:
@@ -2521,7 +2539,7 @@ def all_ballot_items_retrieve_for_one_election_for_api(google_civic_election_id,
     google_civic_election_id_list = [google_civic_election_id]
     measure_results = contest_measure_list_manager.retrieve_all_measures_for_upcoming_election(
         google_civic_election_id_list=google_civic_election_id_list,
-        state_code=state_code_to_find,
+        state_code=state_code_for_query,
         return_list_of_objects=return_list_of_objects,
         limit=measure_limit,
         read_only=read_only)

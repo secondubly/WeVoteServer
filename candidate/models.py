@@ -656,7 +656,8 @@ class CandidateListManager(models.Manager):
         if not positive_value_exists(upcoming_results['success']):
             status += upcoming_results['status']
 
-        upcoming_candidate_we_vote_id_list = []
+        # Stay a queryset so Postgres filters with a subquery instead of a Python list of every upcoming id.
+        upcoming_candidate_ids = None
         if len(upcoming_google_civic_election_id_list):
             try:
                 upcoming_id_integers = [
@@ -670,10 +671,10 @@ class CandidateListManager(models.Manager):
                 if positive_value_exists(limit_to_this_state_code):
                     link_query = link_query.filter(
                         Q(state_code__iexact=limit_to_this_state_code) | Q(state_code__iexact='na'))
-                upcoming_candidate_we_vote_id_list = list(
+                upcoming_candidate_ids = (
                     link_query.exclude(candidate_we_vote_id__isnull=True)
                     .exclude(candidate_we_vote_id='')
-                    .values_list('candidate_we_vote_id', flat=True)
+                    .values('candidate_we_vote_id')
                     .distinct()
                 )
             except Exception as e:
@@ -688,31 +689,27 @@ class CandidateListManager(models.Manager):
             search_query = search_query.order_by('-is_battleground_race', '-twitter_followers_count')
 
             upcoming_query = search_query
-            if len(upcoming_candidate_we_vote_id_list):
-                upcoming_query = upcoming_query.filter(we_vote_id__in=upcoming_candidate_we_vote_id_list)
+            if upcoming_candidate_ids is not None:
+                upcoming_query = upcoming_query.filter(we_vote_id__in=upcoming_candidate_ids)
             else:
                 upcoming_query = upcoming_query.none()
-            upcoming_total_count = upcoming_query.count()
             upcoming_list = list(upcoming_query[:search_limit])
 
             past_query = search_query
-            if len(upcoming_candidate_we_vote_id_list):
-                past_query = past_query.exclude(we_vote_id__in=upcoming_candidate_we_vote_id_list)
+            if upcoming_candidate_ids is not None:
+                past_query = past_query.exclude(we_vote_id__in=upcoming_candidate_ids)
             if positive_value_exists(limit_to_this_state_code):
                 past_query = past_query.filter(
                     Q(state_code__iexact=limit_to_this_state_code) | Q(state_code__iexact='na'))
-            past_total_count = past_query.count()
 
             remainder = search_limit - len(upcoming_list)
             past_list = list(past_query[:remainder]) if remainder > 0 else []
 
             candidate_list_objects = upcoming_list + past_list
             candidates_returned_count = len(candidate_list_objects)
-            candidates_total_count = upcoming_total_count + past_total_count
+            candidates_total_count = candidates_returned_count
             candidate_list_found = candidates_returned_count > 0
             status += 'CANDIDATES_RETRIEVED_SEARCH_UPCOMING_THEN_PAST '
-            if candidates_returned_count < candidates_total_count:
-                status += 'SEARCH_RESULTS_CAPPED '
         except Exception as e:
             handle_exception(e, logger=logger)
             status += 'FAILED retrieve_candidates_for_search_text ' + str(e) + ' '
@@ -1685,7 +1682,7 @@ class CandidateListManager(models.Manager):
                     candidate_query = candidate_query.exclude(we_vote_id__in=ignore_candidate_id_list)
 
                 if positive_value_exists(vote_usa_politician_id):
-                    # If we have an existing Vote USA Politician ID, do not return candidates that have a value in
+                    # If we have an existing Vote-USA Politician ID, do not return candidates that have a value in
                     #  vote_usa_politician_id which doesn't match
                     # In other words, find candidates with the same vote_usa_politician_id OR don't have a value
                     candidate_query = candidate_query.filter(
@@ -1742,7 +1739,7 @@ class CandidateListManager(models.Manager):
                     candidate_query = candidate_query.exclude(we_vote_id__in=ignore_candidate_id_list)
 
                 if positive_value_exists(vote_usa_politician_id):
-                    # If we have an existing Vote USA Politician ID, do not return candidates that have a value in
+                    # If we have an existing Vote-USA Politician ID, do not return candidates that have a value in
                     #  vote_usa_politician_id which doesn't match
                     # In other words, find candidates with the same vote_usa_politician_id OR don't have a value
                     candidate_query = candidate_query.filter(
@@ -1806,7 +1803,7 @@ class CandidateListManager(models.Manager):
                     candidate_query = candidate_query.exclude(we_vote_id__in=ignore_candidate_id_list)
 
                 if positive_value_exists(vote_usa_politician_id):
-                    # If we have an existing Vote USA Politician ID, do not return candidates that have a value in
+                    # If we have an existing Vote-USA Politician ID, do not return candidates that have a value in
                     #  vote_usa_politician_id which doesn't match
                     # In other words, find candidates with the same vote_usa_politician_id OR don't have a value
                     candidate_query = candidate_query.filter(
@@ -1885,7 +1882,7 @@ class CandidateListManager(models.Manager):
                     candidate_query = candidate_query.exclude(we_vote_id__in=ignore_candidate_id_list)
 
                 if positive_value_exists(vote_usa_politician_id):
-                    # If we have an existing Vote USA Politician ID, do not return candidates that have a value in
+                    # If we have an existing Vote-USA Politician ID, do not return candidates that have a value in
                     #  vote_usa_politician_id which doesn't match
                     # In other words, find candidates with the same vote_usa_politician_id OR don't have a value
                     candidate_query = candidate_query.filter(
@@ -2738,7 +2735,7 @@ class CandidateCampaign(models.Model):
     contest_office_we_vote_id = models.CharField(
         verbose_name="we vote permanent id for the office this candidate is running for", max_length=255, default=None,
         null=True, blank=True, unique=False, db_index=True)
-    contest_office_name = models.CharField(verbose_name="name of the office", max_length=255, null=True, blank=True)
+    contest_office_name = models.CharField(db_index=True, max_length=255, null=True, blank=True)
     contest_office_name_calculated = models.BooleanField(db_index=True, default=False)
     district_name = models.CharField(verbose_name="district name", max_length=255, null=True, blank=True)
     # Which office held is this candidate running for?
@@ -2750,8 +2747,7 @@ class CandidateCampaign(models.Model):
         verbose_name="we vote politician id", max_length=255, null=True, db_index=True)
     candidate_analysis_done = models.BooleanField(default=False)
     # The candidate's name.
-    candidate_name = models.CharField(verbose_name="candidate name", max_length=255, null=False, blank=False,
-                                      db_index=True)
+    candidate_name = models.CharField(max_length=255, null=False, blank=False, db_index=True)
     duplicate_check_last_completed = models.DateTimeField(null=True)
     updated_from_politician_completed_first = models.DateTimeField(null=True)
     updated_from_politician_completed_second = models.DateTimeField(null=True)
@@ -2759,12 +2755,9 @@ class CandidateCampaign(models.Model):
 
     # The candidate's name as passed over by Google Civic. We save this so we can match to this candidate even
     # if we edit the candidate's name locally.  Sometimes Google isn't consistent with office names.
-    google_civic_candidate_name = models.CharField(verbose_name="candidate name exactly as received from google civic",
-                                                   max_length=255, null=True, db_index=True)
-    google_civic_candidate_name2 = models.CharField(verbose_name="candidate name exactly as received from google civic",
-                                                    max_length=255, null=True, db_index=True)
-    google_civic_candidate_name3 = models.CharField(verbose_name="candidate name exactly as received from google civic",
-                                                    max_length=255, null=True, db_index=True)
+    google_civic_candidate_name = models.CharField(max_length=255, null=True, db_index=True)
+    google_civic_candidate_name2 = models.CharField(max_length=255, null=True, db_index=True)
+    google_civic_candidate_name3 = models.CharField(max_length=255, null=True, db_index=True)
     candidate_gender = models.CharField(verbose_name="candidate gender", max_length=255, null=True, blank=True)
     # Birthday in YYYY-MM-DD format.
     birth_day_text = models.CharField(verbose_name="birth day", max_length=10, null=True, blank=True)
@@ -2776,7 +2769,7 @@ class CandidateCampaign(models.Model):
     linked_campaignx_we_vote_id = models.CharField(max_length=255, null=True, unique=False)
     linked_campaignx_we_vote_id_date_last_updated = models.DateTimeField(null=True)
     # The full name of the party the candidate is a member of.
-    party = models.CharField(verbose_name="party", max_length=255, null=True, blank=True)
+    party = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     # A URL for a photo of the candidate.
     photo_url = models.TextField(verbose_name="photoUrl", null=True, blank=True)
     photo_url_from_ctcl = models.TextField(null=True, blank=True)
@@ -2784,7 +2777,7 @@ class CandidateCampaign(models.Model):
         verbose_name='candidate portrait url of candidate from maplight', blank=True, null=True)
     photo_url_from_vote_smart = models.TextField(
         verbose_name='candidate portrait url of candidate from vote smart', blank=True, null=True)
-    # Image URL on Vote USA's servers. See vote_usa_profile_image_url_https, the master image cached on We Vote servers.
+    # Image URL on Vote-USA's servers. See vote_usa_profile_image_url_https, the master image cached on We Vote servers.
     photo_url_from_vote_usa = models.TextField(null=True, blank=True)
     # The order the candidate appears on the ballot relative to other candidates for this contest.
     order_on_ballot = models.CharField(verbose_name="order on ballot", max_length=255, null=True, blank=True)
@@ -2840,8 +2833,7 @@ class CandidateCampaign(models.Model):
     candidate_twitter_updates_failing = models.BooleanField(default=False)  # twitter_handle_updates_failing
     twitter_handle_updates_failing = models.BooleanField(default=False)
     twitter_handle2_updates_failing = models.BooleanField(default=False)
-    twitter_name = models.CharField(
-        verbose_name="candidate plain text name from twitter", max_length=255, null=True, blank=True)
+    twitter_name = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     twitter_location = models.CharField(
         verbose_name="candidate location from twitter", max_length=255, null=True, blank=True)
     twitter_followers_count = models.IntegerField(
@@ -2855,12 +2847,9 @@ class CandidateCampaign(models.Model):
         verbose_name='profile banner image from twitter', blank=True, null=True)
     twitter_description = models.CharField(
         verbose_name="Text description of this organization from twitter.", max_length=255, null=True, blank=True)
-    vote_usa_office_id = models.CharField(
-        verbose_name="Vote USA permanent id for the office", max_length=64, default=None, null=True, blank=True)
-    vote_usa_politician_id = models.CharField(
-        verbose_name="Vote USA permanent id for this candidate", max_length=64, default=None, null=True, blank=True,
-        db_index=True)
-    # This is the master image url cached on We Vote servers. See photo_url_from_vote_usa for Vote USA URL.
+    vote_usa_office_id = models.CharField(max_length=64, default=None, null=True, blank=True)
+    vote_usa_politician_id = models.CharField(max_length=64, default=None, null=True, blank=True, db_index=True)
+    # This is the master image url cached on We Vote servers. See photo_url_from_vote_usa for Vote-USA URL.
     vote_usa_profile_image_url_https = models.TextField(null=True, blank=True, default=None)
 
     # Which candidate image is currently active?
@@ -2888,7 +2877,7 @@ class CandidateCampaign(models.Model):
     we_vote_hosted_profile_uploaded_image_url_large = models.TextField(blank=True, null=True)
     we_vote_hosted_profile_uploaded_image_url_medium = models.TextField(blank=True, null=True)
     we_vote_hosted_profile_uploaded_image_url_tiny = models.TextField(blank=True, null=True)
-    # Image for candidate from Vote USA, cached on We Vote's servers. See local master vote_usa_profile_image_url_https.
+    # Image for candidate from Vote-USA, cached on We Vote's servers. See local master vote_usa_profile_image_url_https.
     we_vote_hosted_profile_vote_usa_image_url_large = models.TextField(blank=True, null=True)
     we_vote_hosted_profile_vote_usa_image_url_medium = models.TextField(blank=True, null=True)
     we_vote_hosted_profile_vote_usa_image_url_tiny = models.TextField(blank=True, null=True)
@@ -2935,8 +2924,7 @@ class CandidateCampaign(models.Model):
 
     ballotpedia_candidate_id = models.PositiveIntegerField(verbose_name="ballotpedia integer id", null=True, blank=True)
     # The candidate's name as passed over by Ballotpedia
-    ballotpedia_candidate_name = models.CharField(
-        verbose_name="candidate name exactly as received from ballotpedia", max_length=255, null=True, blank=True)
+    ballotpedia_candidate_name = models.CharField(db_index=True, max_length=255, null=True, blank=True)
     ballotpedia_candidate_summary = models.TextField(verbose_name="candidate summary from ballotpedia",
                                                      null=True, blank=True, default=None)
     ballotpedia_candidate_links_retrieved = models.BooleanField(default=False)
@@ -3007,6 +2995,12 @@ class CandidateCampaign(models.Model):
                 fields=['candidate_name', 'politician_we_vote_id',
                         'candidate_twitter_handle', 'candidate_twitter_handle2', 'candidate_twitter_handle3'],
                 name='candidate_list_for_politician'),
+            models.Index(
+                fields=['ballotpedia_candidate_name', 'candidate_name',
+                        'candidate_twitter_handle', 'candidate_twitter_handle2', 'candidate_twitter_handle3',
+                        'contest_office_name', 'google_civic_candidate_name', 'party',
+                        'twitter_name'],
+                name='candidates_upcoming_election'),
             models.Index(
                 fields=['politician_we_vote_id', 'candidate_name'],
                 name='list_politician_and_name'),

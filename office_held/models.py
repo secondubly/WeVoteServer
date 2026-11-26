@@ -12,7 +12,9 @@ import sys
 from wevote_settings.constants import OFFICE_HELD_YEARS_AVAILABLE
 from wevote_settings.models import fetch_site_unique_id_prefix, fetch_next_we_vote_id_office_held_integer
 import wevote_functions.admin
-from wevote_functions.functions import convert_to_int, extract_state_from_ocd_division_id, positive_value_exists
+from wevote_functions.functions import candidate_party_display, convert_to_int, extract_state_from_ocd_division_id, \
+    positive_value_exists
+from wevote_functions.functions_date import get_current_date_as_integer
 
 DEG_TO_RADS = 0.0174533
 DISTANCE_LIMIT_IN_MILES = 25
@@ -86,6 +88,8 @@ def attach_defaults_values_to_office_held_object(office_held, defaults):
         office_held.race_office_level = defaults['race_office_level']
     if 'state_code' in defaults:
         office_held.state_code = defaults['state_code']
+    if 'vote_usa_office_id' in defaults:
+        office_held.vote_usa_office_id = defaults['vote_usa_office_id']
     if 'wikipedia_id' in defaults:
         office_held.wikipedia_id = defaults['wikipedia_id']
     year_with_data_list = OFFICE_HELD_YEARS_AVAILABLE
@@ -179,6 +183,10 @@ class OfficeHeld(models.Model):
     is_battleground_race_2024 = models.BooleanField(default=False, null=False)
     is_battleground_race_2025 = models.BooleanField(default=False, null=False)
     is_battleground_race_2026 = models.BooleanField(default=False, null=False)
+    is_battleground_race_2027 = models.BooleanField(default=False, null=False)
+    is_battleground_race_2028 = models.BooleanField(default=False, null=False)
+    is_battleground_race_2029 = models.BooleanField(default=False, null=False)
+    is_battleground_race_2030 = models.BooleanField(default=False, null=False)
     is_us_national_house = models.BooleanField(null=True)
     is_us_national_senate = models.BooleanField(null=True)
     # The number of candidates elected to office
@@ -214,26 +222,19 @@ class OfficeHeld(models.Model):
     primary_party = models.CharField(verbose_name="google civic primary party", max_length=255, null=True, blank=True)
     race_office_level = models.CharField(max_length=255, null=True, blank=True)
     state_code = models.CharField(verbose_name="state this office_held serves", max_length=2, null=True, blank=True)
+    vote_usa_office_id = models.TextField(null=True, unique=False)
 
     # Which years do we have representative data? This is cached data built up from master
     #  data in the Representative.years_in_office_flags field
     # As we add more years here, update /wevote_settings/constants.py OFFICE_HELD_YEARS_AVAILABLE
-    # As we add more years here, update attach_defaults_values_to_office_held_object
     year_with_data_2023 = models.BooleanField(default=None, null=True)
     year_with_data_2024 = models.BooleanField(default=None, null=True)
     year_with_data_2025 = models.BooleanField(default=None, null=True)
     year_with_data_2026 = models.BooleanField(default=None, null=True)
-
-    def get_office_held_state(self):
-        if positive_value_exists(self.state_code):
-            return self.state_code
-        else:
-            # Pull this from ocdDivisionId
-            if positive_value_exists(self.ocd_division_id):
-                ocd_division_id = self.ocd_division_id
-                return extract_state_from_ocd_division_id(ocd_division_id)
-            else:
-                return ''
+    year_with_data_2027 = models.BooleanField(default=None, null=True)
+    year_with_data_2028 = models.BooleanField(default=None, null=True)
+    year_with_data_2029 = models.BooleanField(default=None, null=True)
+    year_with_data_2030 = models.BooleanField(default=None, null=True)
 
     # We override the save function, so we can auto-generate we_vote_id
     def save(self, *args, **kwargs):
@@ -253,6 +254,20 @@ class OfficeHeld(models.Model):
                 next_integer=next_local_integer,
             )
         super(OfficeHeld, self).save(*args, **kwargs)
+
+    def get_office_held_state(self):
+        if positive_value_exists(self.state_code):
+            return self.state_code
+        else:
+            # Pull this from ocdDivisionId
+            if positive_value_exists(self.ocd_division_id):
+                ocd_division_id = self.ocd_division_id
+                return extract_state_from_ocd_division_id(ocd_division_id)
+            else:
+                return ''
+
+    def political_party_display(self):
+        return candidate_party_display(self.primary_party)
 
 
 class OfficeHeldManager(models.Manager):
@@ -557,6 +572,7 @@ class OfficeHeldManager(models.Manager):
             office_held_name='',
             office_held_we_vote_id='',
             read_only=False,
+            vote_usa_office_id='',
     ):
         office_held = None
         office_held_found = False
@@ -584,6 +600,16 @@ class OfficeHeldManager(models.Manager):
                 office_held_found = True
                 office_held_we_vote_id = office_held.we_vote_id
                 status += "RETRIEVE_OFFICE_HELD_FOUND_BY_WE_VOTE_ID "
+            elif positive_value_exists(vote_usa_office_id):
+                if read_only:
+                    office_held = OfficeHeld.objects.using('readonly')\
+                        .get(vote_usa_office_id__iexact=vote_usa_office_id)
+                else:
+                    office_held = OfficeHeld.objects.get(vote_usa_office_id__iexact=vote_usa_office_id)
+                office_held_id = office_held.id
+                office_held_found = True
+                office_held_we_vote_id = office_held.we_vote_id
+                status += "RETRIEVE_OFFICE_HELD_FOUND_BY_VOTE_USA_OFFICE_ID "
             elif positive_value_exists(maplight_id):
                 if read_only:
                     office_held = OfficeHeld.objects.using('readonly').get(maplight_id=maplight_id)
@@ -724,31 +750,54 @@ class OfficeHeldManager(models.Manager):
 
     @staticmethod
     def create_offices_held_for_location_row_entry(
+            date_as_integer=None,
             polling_location_we_vote_id=None,
             state_code=None,
+            text_for_map_search=None,
             voter_we_vote_id=None,
             defaults={}):
         """
         Create OfficesHeldForLocation table entry with information about the OfficeHeld entries associated
         with one location.
+        :param date_as_integer:
         :param polling_location_we_vote_id:
         :param state_code:
+        :param text_for_map_search:
         :param voter_we_vote_id:
         :param defaults:
         :return:
         """
-        success = False
+        if not positive_value_exists(date_as_integer):
+            date_as_integer = get_current_date_as_integer()
         status = ""
+        offices_held_for_location = None
+        offices_held_for_location_id = 0
         offices_held_for_location_created = False
         offices_held_for_location_found = False
         offices_held_for_location_updated = False
-        offices_held_for_location = None
 
         try:
-            offices_held_for_location = OfficesHeldForLocation.objects.create(
-                polling_location_we_vote_id=polling_location_we_vote_id,
-                state_code=state_code,
-                voter_we_vote_id=voter_we_vote_id)
+            if polling_location_we_vote_id:
+                offices_held_for_location = OfficesHeldForLocation.objects.create(
+                    polling_location_we_vote_id=polling_location_we_vote_id,
+                    state_code=state_code,
+                )
+                offices_held_for_location_id = offices_held_for_location.id
+            elif positive_value_exists(voter_we_vote_id):
+                offices_held_for_location = OfficesHeldForLocation.objects.create(
+                    date_as_integer=date_as_integer,
+                    state_code=state_code,
+                    text_for_map_search=text_for_map_search,
+                    voter_we_vote_id=voter_we_vote_id,
+                )
+                offices_held_for_location_id = offices_held_for_location.id
+            else:
+                status += "NEITHER_POLLING_LOCATION_NOR_VOTER_FOUND "
+                offices_held_for_location_id = None
+                offices_held_for_location = None
+                offices_held_for_location_created = False
+                offices_held_for_location_found = False
+
             if offices_held_for_location:
                 status += "OFFICES_HELD_FOR_LOCATION_CREATED "
                 offices_held_for_location_created = True
@@ -756,6 +805,7 @@ class OfficeHeldManager(models.Manager):
                 offices_held_for_location = \
                     attach_defaults_values_to_offices_held_object(offices_held_for_location, defaults)
                 offices_held_for_location.save()
+                offices_held_for_location_id = offices_held_for_location.id
                 offices_held_for_location_updated = True
                 success = True
             else:
@@ -770,10 +820,11 @@ class OfficeHeldManager(models.Manager):
         results = {
                 'success':                  success,
                 'status':                   status,
+                'offices_held_for_location':              offices_held_for_location,
+                'offices_held_for_location_id':           offices_held_for_location_id,
                 'offices_held_for_location_created':      offices_held_for_location_created,
                 'offices_held_for_location_found':        offices_held_for_location_found,
                 'offices_held_for_location_updated':      offices_held_for_location_updated,
-                'offices_held_for_location':              offices_held_for_location,
             }
         return results
 
@@ -897,8 +948,10 @@ class OfficeHeldManager(models.Manager):
 
     @staticmethod
     def retrieve_offices_held_for_location(
+            date_as_integer=0,
             offices_held_for_location_id=0,
             polling_location_we_vote_id='',
+            state_code='',
             voter_we_vote_id='',
             read_only=False,
     ):
@@ -919,6 +972,7 @@ class OfficeHeldManager(models.Manager):
                 if len(offices_held_list) == 1:
                     offices_held_for_location = offices_held_list[0]
                     offices_held_for_location_found = True
+                    offices_held_for_location_id = offices_held_for_location.id
                 status += "RETRIEVE_OFFICES_HELD_FOR_LOCATION_FOUND_BY_ID "
             elif positive_value_exists(polling_location_we_vote_id):
                 if read_only:
@@ -931,6 +985,7 @@ class OfficeHeldManager(models.Manager):
                 if len(offices_held_list) == 1:
                     offices_held_for_location = offices_held_list[0]
                     offices_held_for_location_found = True
+                    offices_held_for_location_id = offices_held_for_location.id
                 status += "RETRIEVE_OFFICES_HELD_FOR_LOCATION_FOUND_BY_POLLING_LOCATION_WE_VOTE_ID "
             elif positive_value_exists(voter_we_vote_id):
                 if read_only:
@@ -938,12 +993,17 @@ class OfficeHeldManager(models.Manager):
                 else:
                     queryset = OfficesHeldForLocation.objects.all()
                 queryset = queryset.filter(voter_we_vote_id=voter_we_vote_id)
+                queryset = queryset.filter(date_as_integer=date_as_integer)
+                queryset = queryset.filter(state_code=state_code)
                 queryset = queryset.order_by('-date_last_retrieved')
                 offices_held_list = queryset[:1]
                 if len(offices_held_list) == 1:
                     offices_held_for_location = offices_held_list[0]
                     offices_held_for_location_found = True
-                status += "RETRIEVE_OFFICES_HELD_FOR_LOCATION_FOUND_BY_VOTER_WE_VOTE_ID "
+                    offices_held_for_location_id = offices_held_for_location.id
+                    status += "RETRIEVE_OFFICES_HELD_FOR_LOCATION_FOUND_BY_VOTER_WE_VOTE_ID "
+                else:
+                    status += "RETRIEVE_OFFICES_HELD_FOR_LOCATION_NOT_FOUND_BY_VOTER_WE_VOTE_ID "
             else:
                 status += "RETRIEVE_OFFICES_HELD_FOR_LOCATION_SEARCH_INDEX_MISSING "
                 success = False
@@ -955,6 +1015,7 @@ class OfficeHeldManager(models.Manager):
             'success':                          success,
             'status':                           status,
             'offices_held_for_location':        offices_held_for_location,
+            'offices_held_for_location_id':        offices_held_for_location_id,
             'offices_held_for_location_found':  offices_held_for_location_found,
         }
         return results
@@ -1127,10 +1188,21 @@ class OfficeHeldManager(models.Manager):
 
 
 class OfficesHeldForLocation(models.Model):
+    """
+    We create two major kinds of entries:
+    1) For polling location, not specific to one voter. If the data for 2+ years is identical, we simply mark
+       multiple year_with_data_<year> fields true.
+       If the data in a new year is different, we create a new entry with that year marked true.
+    2) For voter. In this case we can store multiple entries for the voter.
+       Every day (based on date_as_integer), we create one entry per voter, per unique address stored in
+       text_for_map_search.
+    """
+    # We store YYYYMMDD as an integer for very fast lookup (ex/ "20170901" for September, 1, 2017)
+    date_as_integer = models.PositiveIntegerField(null=True, unique=False, db_index=True)
     date_last_retrieved = models.DateField(null=True, auto_now=False)
     date_last_updated = models.DateField(null=True, auto_now=True)
-    latitude = models.FloatField(null=True, verbose_name='latitude returned from Google')
-    longitude = models.FloatField(null=True, verbose_name='longitude returned from Google')
+    latitude = models.FloatField(null=True)
+    longitude = models.FloatField(null=True)
     office_held_name_01 = models.CharField(max_length=255, null=True)
     office_held_name_02 = models.CharField(max_length=255, null=True)
     office_held_name_03 = models.CharField(max_length=255, null=True)
@@ -1194,11 +1266,22 @@ class OfficesHeldForLocation(models.Model):
 
     polling_location_we_vote_id = models.CharField(default=None, max_length=255, null=True, unique=False, db_index=True)
     state_code = models.CharField(max_length=2, null=True, db_index=True)
+    # text_for_map_search is used when searching for representatives for specific voter. This allows a voter to
+    #  see elected officials for other addresses on the same day.
+    text_for_map_search = models.CharField(default=None, max_length=255, null=True)
     voter_we_vote_id = models.CharField(default=None, max_length=255, null=True)
     # Which years do we have OfficesHeldForLocation data?
     # As we add more years here, update /wevote_settings/constants.py OFFICE_HELD_YEARS_AVAILABLE
-    # As we add more years here, update attach_defaults_values_to_offices_held_object
     year_with_data_2023 = models.BooleanField(default=None, null=True)
     year_with_data_2024 = models.BooleanField(default=None, null=True)
     year_with_data_2025 = models.BooleanField(default=None, null=True)
     year_with_data_2026 = models.BooleanField(default=None, null=True)
+    year_with_data_2027 = models.BooleanField(default=None, null=True)
+    year_with_data_2028 = models.BooleanField(default=None, null=True)
+    year_with_data_2029 = models.BooleanField(default=None, null=True)
+    year_with_data_2030 = models.BooleanField(default=None, null=True)
+
+    def __str__(self):
+        location_id = self.pk if self.pk is not None else 'unsaved'
+        state_code = f', state_code={self.state_code}' if self.state_code else ''
+        return f'OfficesHeldForLocation(id={location_id}{state_code})'

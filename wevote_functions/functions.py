@@ -1235,11 +1235,13 @@ def extract_vote_usa_measure_id(raw_vote_usa_measure_id):
 def extract_vote_usa_office_id(raw_vote_usa_office_id):
     if positive_value_exists(raw_vote_usa_office_id):
         raw_vote_usa_office_id = raw_vote_usa_office_id.strip()
+        if len(raw_vote_usa_office_id) >= 2 and raw_vote_usa_office_id[0] == "'" and raw_vote_usa_office_id[-1] == "'":
+            raw_vote_usa_office_id = raw_vote_usa_office_id[1:-1]
         if '|' in raw_vote_usa_office_id:
             parts = raw_vote_usa_office_id.split("|")
             vote_usa_office_id = parts[1]
         elif '}' in raw_vote_usa_office_id:
-            # A typo has been found in incoming data from Vote USA
+            # A typo has been found in incoming data from Vote-USA
             parts = raw_vote_usa_office_id.split("}")
             vote_usa_office_id = parts[1]
         else:
@@ -1262,7 +1264,7 @@ def extract_vote_usa_office_id_with_suffix(raw_vote_usa_office_id):
             if suffix:
                 vote_usa_office_id += '|' + suffix
         elif '}' in raw_vote_usa_office_id:
-            # A typo has been found in incoming data from Vote USA
+            # A typo has been found in incoming data from Vote-USA
             parts = raw_vote_usa_office_id.split("}")
             vote_usa_office_id = parts[1]
             chunk_with_election_type = parts[0]
@@ -1715,6 +1717,30 @@ def set_voter_api_device_id(request, response, voter_api_device_id):
 def delete_voter_api_device_id_cookie(response):
     delete_cookie(response, 'voter_api_device_id')
 
+def set_redirect_url(response, redirect_url):
+    """
+    Set the redirect URL cookie.
+    :param response: HttpResponse object
+    :param redirect_url: URL to redirect to
+    """
+    set_cookie(response, 'redirect_url', redirect_url, days_expire=1)
+
+def get_redirect_url(request):
+    """
+    Get the redirect URL cookie.
+    :param request: HttpRequest object
+    :return: URL to redirect to
+    """
+    if hasattr(request, 'COOKIES'):
+        return request.COOKIES.get('redirect_url', '')
+    return ''
+
+def delete_redirect_url(response):
+    """
+    Delete the redirect URL cookie.
+    :param response: HttpResponse object
+    """
+    delete_cookie(response, 'redirect_url')
 
 def generate_random_string(
         string_length=88,

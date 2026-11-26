@@ -2,18 +2,19 @@
 # Brought to you by We Vote. Be good.
 # -*- coding: UTF-8 -*-
 
-import json
 import hmac
+import json
 from datetime import datetime, timezone
 from time import time
-from sendgrid import sendgrid
-from sendgrid.helpers.mail import Mail, Email, To, Content
+
 from django.contrib import messages
 from django.core.exceptions import RequestDataTooBig
 from django.db.models import F
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django_user_agents.utils import get_user_agent
+from sendgrid import sendgrid, To
+from sendgrid.helpers.mail import Mail, Email, Content
 
 import wevote_functions.admin
 from apis_v1.controllers import voter_count
@@ -42,10 +43,12 @@ from issue.models import Issue
 from organization.models import INDIVIDUAL, OrganizationManager
 from position.controllers import voter_all_positions_retrieve_for_api, \
     voter_position_retrieve_for_api, voter_position_comment_save_for_api, voter_position_visibility_save_for_api
+from representative.controllers_representatives_retrieve import voter_representatives_retrieve_for_api
 from sms.controllers import voter_sms_phone_number_retrieve_for_api, voter_sms_phone_number_save_for_api
 from sms.models import SMSManager
 from support_oppose_deciding.controllers import voter_opposing_save, voter_stop_opposing_save, \
     voter_stop_supporting_save, voter_supporting_save
+from voter.constants import MINIMUM_ADDRESS_LENGTH_TO_HAVE_STREET_ADDRESS
 from voter.controllers import delete_all_voter_information_permanently, \
     voter_address_retrieve_for_api, voter_create_for_api, voter_merge_two_accounts_for_api, \
     voter_merge_two_accounts_action_schedule, voter_photo_save_for_api, voter_retrieve_for_api, \
@@ -60,10 +63,12 @@ from voter.models import BALLOT_ADDRESS, fetch_voter_we_vote_id_from_voter_devic
     VoterAddressManager, VoterDeviceLink, VoterDeviceLinkManager, VoterManager, Voter, \
     voter_has_authority, APP_REVIEW_NEGATIVE
 from voter_guide.controllers import voter_follow_all_organizations_followed_by_organization_for_api
-from wevote_functions.functions import convert_to_int, generate_random_string, get_maximum_number_to_retrieve_from_request, \
+from wevote_functions.functions import convert_to_int, generate_random_string, \
+    get_maximum_number_to_retrieve_from_request, \
     get_voter_device_id, is_voter_device_id_valid, positive_value_exists, normalize_sms_phone_number_for_voter_update
 from wevote_functions.functions import extract_first_name_from_full_name, extract_last_name_from_full_name
 from wevote_functions.functions_date import DATE_FORMAT_YMD_HMS
+
 logger = wevote_functions.admin.get_logger(__name__)
 
 WE_VOTE_SERVER_ROOT_URL = get_environment_variable("WE_VOTE_SERVER_ROOT_URL")
@@ -595,14 +600,13 @@ def voter_address_save_view(request):  # voterAddressSave
             pass
         elif default_election_data_source_is_ballotpedia:
             status += "VOTER_ADDRESS_SAVE-SHOULD_WE_USE_BALLOTPEDIA_API? "
-            length_at_which_we_suspect_address_has_street = 25
             length_of_text_for_map_search = 0
             if isinstance(text_for_map_search, str):
                 length_of_text_for_map_search = len(text_for_map_search)
 
             # We don't want to call Ballotpedia when we just have "City, State ZIP". Since we don't always know
             #  whether we have a street address or not, then we use a simple string length cut-off.
-            if length_of_text_for_map_search > length_at_which_we_suspect_address_has_street:
+            if length_of_text_for_map_search > MINIMUM_ADDRESS_LENGTH_TO_HAVE_STREET_ADDRESS:
                 status += "ADDRESS_SAVE_BALLOTPEDIA_TEXT_FOR_MAP_SEARCH_LONG_ENOUGH "
                 # 1a) Get ballot data from Ballotpedia for the actual VoterAddress
                 ballotpedia_retrieve_results = voter_ballot_items_retrieve_from_ballotpedia_for_api_v4(
@@ -659,7 +663,6 @@ def voter_address_save_view(request):  # voterAddressSave
                 status += "NOT_REACHING_OUT_TO_BALLOTPEDIA_TEXT_NOT_LONG_ENOUGH "
         elif default_election_data_source_is_ctcl:
             status += "VOTER_ADDRESS_SAVE-USING_CTCL "
-            length_at_which_we_suspect_address_has_street = 25
             length_of_text_for_map_search = 0
             if isinstance(text_for_map_search, str):
                 length_of_text_for_map_search = len(text_for_map_search)
@@ -667,7 +670,7 @@ def voter_address_save_view(request):  # voterAddressSave
             # We don't want to call CTCL when we just have "City, State ZIP".
             # Since we don't always know whether we have a street address or not, then we use a
             # simple string length cut-off.
-            if length_of_text_for_map_search > length_at_which_we_suspect_address_has_street:
+            if length_of_text_for_map_search > MINIMUM_ADDRESS_LENGTH_TO_HAVE_STREET_ADDRESS:
                 status += "ADDRESS_SAVE_CTCL_TEXT_FOR_MAP_SEARCH_LONG_ENOUGH "
                 # 1a) Get ballot data for the actual VoterAddress
                 from import_export_google_civic.controllers import \
@@ -725,15 +728,14 @@ def voter_address_save_view(request):  # voterAddressSave
                 status += "NOT_REACHING_OUT_TO_CTCL_TEXT_NOT_LONG_ENOUGH "
         elif default_election_data_source_is_vote_usa:
             status += "VOTER_ADDRESS_SAVE-USING_VOTE_USA "
-            length_at_which_we_suspect_address_has_street = 25
             length_of_text_for_map_search = 0
             if isinstance(text_for_map_search, str):
                 length_of_text_for_map_search = len(text_for_map_search)
 
-            # We don't want to call Vote USA when we just have "City, State ZIP".
+            # We don't want to call Vote-USA when we just have "City, State ZIP".
             # Since we don't always know whether we have a street address or not, then we use a
             # simple string length cut-off.
-            if length_of_text_for_map_search > length_at_which_we_suspect_address_has_street:
+            if length_of_text_for_map_search > MINIMUM_ADDRESS_LENGTH_TO_HAVE_STREET_ADDRESS:
                 status += "ADDRESS_SAVE_VOTE_USA_TEXT_FOR_MAP_SEARCH_LONG_ENOUGH "
                 # 1a) Get ballot data for the actual VoterAddress
                 from import_export_google_civic.controllers import voter_ballot_items_retrieve_from_google_civic_2021
@@ -2110,6 +2112,19 @@ def voter_split_into_two_accounts_view(request):  # voterSplitIntoTwoAccounts
         'success':                          results['success'],
         'voter_device_id':                  voter_device_id,
     }
+    return HttpResponse(json.dumps(json_data), content_type='application/json')
+
+
+def voter_representatives_retrieve_view(request):  # voterRepresentativesRetrieve
+    """
+    Request the representatives for voter
+    :param request:
+    :return:
+    """
+    voter_device_id = get_voter_device_id(request)  # We standardize how we take in the voter_device_id
+
+    json_data = voter_representatives_retrieve_for_api(voter_device_id)
+
     return HttpResponse(json.dumps(json_data), content_type='application/json')
 
 
@@ -3696,11 +3711,17 @@ def voter_has_reviewed_an_app(request):    # voterReviewedApp
     we_vote_id = voter.we_vote_id
 
     app_review_state = request.POST.get('app_review_state', 'NONE').upper()
+    address_state_code = request.POST.get('address_state_code', '')
     app_review_version  = request.POST.get('app_review_version', '')
     app_review_platform = request.POST.get('app_review_platform', '')
+    app_review_pathname = request.POST.get('app_review_pathname', '')
     app_review_body = request.POST.get('app_review_body_negative_bypass', '')  # Not stored in SQL
     app_review_email = request.POST.get('app_review_email', '')                # Not stored in SQL
     app_review_date = str(datetime.now(timezone.utc))                          # SQL datetime now, timezone aware
+    outgoing_email_address = request.POST.get('sendgrid_outgoing_email', 'support@wevote.us')
+
+    # print("app_review_body ", app_review_body)
+    # sys.stdout.flush()
 
     json_data = {
         'success': True,
@@ -3708,9 +3729,11 @@ def voter_has_reviewed_an_app(request):    # voterReviewedApp
         'voter_device_id': voter_device_id,
         'we_vote_id': we_vote_id,
         'app_review_state': app_review_state,
+        'address_state_code': address_state_code,
         'app_review_date': app_review_date,
         'app_review_version': app_review_version,
         'app_review_platform': app_review_platform,
+        'app_review_pathname': app_review_pathname,
         'email_api_status_code': 'none',
         'negative_bypass_review_length': len(app_review_body)
     }
@@ -3727,13 +3750,17 @@ def voter_has_reviewed_an_app(request):    # voterReviewedApp
         json_data["we_vote_id"] = we_vote_id
         json_data['first_name'] = voter.first_name
         json_data['last_name'] = voter.last_name
-        id_string = ''
+        # print("app_review_state.upper() ", app_review_state.upper())
+        # sys.stdout.flush()
 
         if app_review_state.upper() == APP_REVIEW_NEGATIVE:
             id_string = (
-                f"[voter: {we_vote_id}, email: {voter.email or ''}, first: {voter.first_name or ''}, last: {voter.last_name or ''}, "
+                f"[voter: {we_vote_id}, email: {voter.email or ''}, sms: {voter.normalized_sms_phone_number or ''}, "
+                f"first: {voter.first_name or ''}, last: {voter.last_name or ''}, "
+                f"address_state_code: {address_state_code}, pathname: {app_review_pathname}, "
                 f"platform: {voter.app_review_platform or ''}, version: {voter.app_review_version or ''}]")
-            # print(id_string)
+            logger.error("voter_has_reviewed_an_app -- id_string " + id_string)
+
             if positive_value_exists(app_review_email):
                 json_data['email'] = app_review_email
             else:
@@ -3745,13 +3772,15 @@ def voter_has_reviewed_an_app(request):    # voterReviewedApp
             # We do not want impersonal automatic replies from ZenDesk for negative comments
             # And we don't want a zendesk record if not negative
             from_email = Email(json_data['email'])
-            to_email = To('support@wevote.us')
+            to_email = To(outgoing_email_address)
             subject = "Negative App Review bypassed in Cordova"
             content = Content("text/plain", content_string)
             mail = Mail(from_email, to_email, subject, content)
 
             # Get a JSON-ready representation of the Mail object
             mail_json = mail.get()
+            logger.error("voter_has_reviewed_an_app -- positive_value_exists(mail_json): " + str(positive_value_exists(mail_json)))
+            logger.error("voter_has_reviewed_an_app -- mail_json: " + json.dumps(mail_json))
 
             # Send an HTTP POST request to /mail/send
             response = sg.client.mail.send.post(request_body=mail_json)
