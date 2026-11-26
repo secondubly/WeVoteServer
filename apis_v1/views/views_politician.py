@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 
 import wevote_functions.admin
 from config.environment_variable_functions import get_environment_variable
-from politician.controllers import politicians_query_for_api, politician_retrieve_for_api, politician_save_for_api, politician_supporter_save_for_api
+from politician.controllers import politicians_query_for_api, politician_retrieve_for_api, politician_save_for_api
 from politician.controllers_managed_politician import politicians_managed_retrieve_for_api
 from politician.views_admin import politician_change_gender_id_view
 from wevote_functions.functions import convert_to_int, get_voter_device_id, positive_value_exists
@@ -241,26 +241,26 @@ def save_repaired_gender_ids_view(request):  # politicianSaveRepairedGenderIds
 #     return HttpResponse(json.dumps(json_data), content_type='application/json')
 
 
-def politician_supporter_save_view(request):  # politicianSupporterSave
-    voter_device_id = get_voter_device_id(request)  # We standardize how we take in the voter_device_id
-    supporter_endorsement = request.GET.get('supporter_endorsement', '')
-    supporter_endorsement_changed = positive_value_exists(request.GET.get('supporter_endorsement_changed', False))
-    visible_to_public = positive_value_exists(request.GET.get('visible_to_public', True))
-    visible_to_public_changed = positive_value_exists(request.GET.get('visible_to_public_changed', False))
-    politician_supported = positive_value_exists(request.GET.get('politician_supported', False))
-    politician_supported_changed = positive_value_exists(request.GET.get('politician_supported_changed', False))
-    politician_we_vote_id = request.GET.get('politician_we_vote_id', '')
-    json_data = politician_supporter_save_for_api(
-        politician_we_vote_id=politician_we_vote_id,
-        politician_supported=politician_supported,
-        politician_supported_changed=politician_supported_changed,
-        supporter_endorsement=supporter_endorsement,
-        supporter_endorsement_changed=supporter_endorsement_changed,
-        visible_to_public=visible_to_public,
-        visible_to_public_changed=visible_to_public_changed,
-        voter_device_id=voter_device_id,
-    )
-    return HttpResponse(json.dumps(json_data), content_type='application/json')
+# def politician_supporter_save_view(request):  # politicianSupporterSave
+#     voter_device_id = get_voter_device_id(request)  # We standardize how we take in the voter_device_id
+#     supporter_endorsement = request.GET.get('supporter_endorsement', '')
+#     supporter_endorsement_changed = positive_value_exists(request.GET.get('supporter_endorsement_changed', False))
+#     visible_to_public = positive_value_exists(request.GET.get('visible_to_public', True))
+#     visible_to_public_changed = positive_value_exists(request.GET.get('visible_to_public_changed', False))
+#     politician_supported = positive_value_exists(request.GET.get('politician_supported', False))
+#     politician_supported_changed = positive_value_exists(request.GET.get('politician_supported_changed', False))
+#     politician_we_vote_id = request.GET.get('politician_we_vote_id', '')
+#     json_data = politician_supporter_save_for_api(
+#         politician_we_vote_id=politician_we_vote_id,
+#         politician_supported=politician_supported,
+#         politician_supported_changed=politician_supported_changed,
+#         supporter_endorsement=supporter_endorsement,
+#         supporter_endorsement_changed=supporter_endorsement_changed,
+#         visible_to_public=visible_to_public,
+#         visible_to_public_changed=visible_to_public_changed,
+#         voter_device_id=voter_device_id,
+#     )
+#     return HttpResponse(json.dumps(json_data), content_type='application/json')
 
 
 # def voter_politician_follow_view(request):  # politicianFollow
