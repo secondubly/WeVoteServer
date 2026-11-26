@@ -728,6 +728,8 @@ urlpatterns = [
                        views_docs.politician_save_doc_view, name='politicianSaveDocs'),
                   path('docs/politiciansManagedRetrieve/',
                        views_docs.politicians_managed_retrieve_doc_view, name='politiciansManagedRetrieveDocs'),
+                  path('docs/politicianSupporterSave/',
+                       views_docs.politician_supporter_save_doc_view, name='politicianSupporterSaveDocs'),
                   path('docs/politiciansQuery/', views_docs.politicians_query_doc_view,
                        name='politiciansQueryDocs'),
                   path('docs/politiciansSyncOut/', views_docs.politicians_sync_out_doc_view,

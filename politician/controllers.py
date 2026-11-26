@@ -3830,3 +3830,78 @@ def update_parallel_fields_on_related_object(
         'status':       status,
     }
     return results
+
+def politician_supporter_save_for_api(
+        politician_we_vote_id='',
+        politician_supported=False,
+        politician_supported_changed=False,
+        supporter_endorsement='',
+        supporter_endorsement_changed=False,
+        visible_to_public=False,
+        visible_to_public_changed=False,
+        voter_device_id=''
+):
+    status = ''
+    success = True
+    voter_signed_in_with_email = False
+
+    error_results = {
+        'status': status,
+        'success': False,
+        'politician_supported': False,
+        'politician_we_vote_id': '',
+        'date_last_changed': '',
+        'date_supported': '',
+        'id': '',
+        'organization_we_vote_id': '',
+        'supporter_endorsement': '',
+        'supporter_name': '',
+        'visible_to_public': True,
+        'voter_we_vote_id': '',
+        'voter_signed_in_with_email': voter_signed_in_with_email
+    }
+
+    voter_manager = VoterManager()
+    voter_results = voter_manager.retrieve_voter_from_voter_device_id(voter_device_id, read_only=True)
+
+    if voter_results['voter_found']:
+        voter = voter_results['voter']
+        voter_signed_in_with_email = voter.signed_in_with_email()
+        voter_we_vote_id = voter.we_vote_id
+        linked_organization_we_vote_id = voter.linked_organization_we_vote_id
+    else:
+        status += "VALID_VOTER_ID_MISSING "
+        results = error_results
+        results['status'] = status
+        return results
+    
+    if positive_value_exists(politician_supported):
+        if not voter.signed_in_with_email():
+            status += "SUPPORTER_NOT_SIGNED_IN_WITH_EMAIL "
+
+    politician_manager = PoliticianManager()
+
+    # get existing supporter if available
+    supporter_results = politician_manager.retrieve_politician_supporter(politician_we_vote_id, voter_we_vote_id, read_only=True)
+
+    if supporter_results['success']:
+        politician_supporter = supporter_results['politician_supporter']
+
+        voter_politician_supporter_dict = {
+            'politician_supported':           politician_supporter.politician_supported,
+            'politician_we_vote_id':         politician_supporter.politician_we_vote_id,
+            'chip_in_total':                chip_in_total,
+            'date_last_changed':            date_last_changed_string,
+            'date_supported':               date_supported_string,
+            'id':                           politician_supporter.id,
+            'organization_we_vote_id':      politician_supporter.organization_we_vote_id,
+            'supporter_endorsement':        politician_supporter.supporter_endorsement,
+            'supporter_name':               politician_supporter.supporter_name,
+            'visible_to_public':            politician_supporter.visible_to_public,
+            'voter_we_vote_id':             politician_supporter.voter_we_vote_id,
+            'voter_signed_in_with_email':   voter_signed_in_with_email,
+            'we_vote_hosted_profile_image_url_medium': politician_supporter.we_vote_hosted_profile_image_url_medium,
+            'we_vote_hosted_profile_image_url_tiny': politician_supporter.we_vote_hosted_profile_image_url_tiny,
+        }
+    else:
+        voter_supporter_dict = {}
